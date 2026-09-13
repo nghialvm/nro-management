@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptyPlayerItem, parsePlayerItems, serializePlayerItems } from './playerData'
+import { buildPlayerUpdatePayload, emptyPlayerItem, parsePlayerItems, serializePlayerItems } from './playerData'
 
 describe('player item data', () => {
   it('parses the legacy string-item format and preserves numeric IDs when saved', () => {
@@ -43,5 +43,23 @@ describe('player item data', () => {
     expect(roundTrip.entries.map((entry) => entry.itemId)).toEqual([838, -1, -1])
     expect(roundTrip.entries[0].options).toEqual([{ id: 47, param: 2 }])
     expect(roundTrip.entries.map((entry) => entry.index)).toEqual([0, 1, 2])
+  })
+
+  it('builds a partial player payload without read-only or unchanged fields', () => {
+    const source = {
+      id: 1234,
+      name: 'Warrior',
+      items_body: 'old-items',
+      items_bag: 'same-bag',
+      LastTimeLoginGame: '2026-09-13 10:00:00',
+    }
+    const draft = {
+      ...source,
+      items_body: 'new-items',
+      LastTimeLoginGame: '2026-09-13 11:00:00',
+    }
+
+    expect(buildPlayerUpdatePayload(draft, source)).toEqual({ id: 1234, items_body: 'new-items' })
+    expect(buildPlayerUpdatePayload(source, source)).toEqual({ id: 1234 })
   })
 })

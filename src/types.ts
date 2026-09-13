@@ -178,6 +178,46 @@ export interface BossConfigRow {
   version: string
 }
 
+export interface BossSpawnZone {
+  zoneId: number
+  players: number
+  bosses: number
+  available: boolean
+  status: 'AVAILABLE' | 'OCCUPIED' | 'RESTRICTED' | string
+}
+
+export interface BossSpawnMap {
+  mapId: number
+  mapName: string
+  zones: BossSpawnZone[]
+}
+
+export interface BossSpawnBoss {
+  bossId: number
+  name: string
+  maps: BossSpawnMap[]
+  instances: {
+    total: number
+    alive: number
+    resting: number
+    dead: number
+  }
+}
+
+export interface BossSpawnOptions {
+  bosses: BossSpawnBoss[]
+}
+
+export interface BossSpawnResult {
+  action: 'summon' | string
+  created: boolean
+  bossId: number
+  name: string
+  mapId: number
+  zoneId: number
+  status: string
+}
+
 export interface AntiDdosStatus {
   running: boolean
   autoScan: boolean
@@ -188,10 +228,30 @@ export interface AntiDdosStatus {
   mode: string
 }
 
+export interface AttributeServerRow {
+  id: number
+  templateId: number
+  templateName: string
+  value: number
+  time: number
+  active: boolean
+}
+
+export interface AttributeServerConfig {
+  attributes: AttributeServerRow[]
+  powerLimit: number
+}
+
+export interface AttributeServerUpdate {
+  value: number
+  time: number
+}
+
 export const moduleDefinitions = [
   { key: 'dashboard', path: '/', label: 'Tổng quan' },
   { key: 'accounts', path: '/accounts', label: 'Tài khoản' },
   { key: 'players', path: '/players', label: 'Người chơi' },
+  { key: 'attribute-server', path: '/attribute-server', label: 'Tiềm năng server' },
   { key: 'shops', path: '/shops', label: 'Cửa hàng / Shop' },
   { key: 'giftcodes', path: '/giftcodes', label: 'Giftcode' },
   { key: 'topup-rewards', path: '/topup-rewards', label: 'Nạp & phần thưởng' },

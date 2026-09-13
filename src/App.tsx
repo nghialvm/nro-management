@@ -35,6 +35,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { api, ApiRequestError, clearAuth } from './api'
+import { AttributeServerPage } from './AttributeServerPage'
 import { GiftcodePage } from './GiftcodePage'
 import { PlayerPage } from './PlayerPage'
 import { ShopPage } from './ShopPage'
@@ -43,6 +44,7 @@ import { collectReferences, isJsonObjectDocument } from './relations'
 import type {
   AntiDdosStatus,
   BossConfigRow,
+  BossSpawnOptions,
   DashboardSnapshot,
   EventConfig,
   JsonMap,
@@ -62,6 +64,7 @@ const iconByKey: Record<string, typeof LayoutDashboard> = {
   dashboard: LayoutDashboard,
   accounts: Users,
   players: Sparkles,
+  'attribute-server': Zap,
   shops: Package,
   giftcodes: Gift,
   'topup-rewards': Zap,
@@ -274,6 +277,7 @@ function AdminShell({ user, onLogout }: { user: User; onLogout: () => void }) {
         <main className="page-content">
           <Routes>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/attribute-server" element={<AttributeServerPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/bosses" element={<BossesPage />} />
             <Route path="/security" element={<SecurityPage />} />
@@ -370,16 +374,83 @@ function EventsPage() {
 function BossesPage() {
   const queryClient = useQueryClient()
   const query = useQuery({ queryKey: ['bosses'], queryFn: api.bosses })
+  const spawnQuery = useQuery<BossSpawnOptions>({
+    queryKey: ['boss-spawn-options'],
+    queryFn: api.bossSpawnOptions,
+    refetchInterval: 5000,
+  })
   const bossReferences = useMemo(() => (query.data ?? []).flatMap((row) => collectReferences({ outfit: row.data?.outfit }, 'bosses')), [query.data])
   const bossLookup = useReferenceCatalog(bossReferences)
   const [selected, setSelected] = useState<BossConfigRow | null>(null)
   const [editor, setEditor] = useState('{}')
+  const [spawnBossId, setSpawnBossId] = useState<number | ''>('')
+  const [spawnMapId, setSpawnMapId] = useState<number | ''>('')
+  const [spawnZoneId, setSpawnZoneId] = useState<number | ''>('')
+  const [spawnSuccess, setSpawnSuccess] = useState('')
   const validJson = isJsonObjectDocument(editor)
   useEffect(() => { if (query.data?.length && !selected) { setSelected(query.data[0]); setEditor(JSON.stringify(query.data[0].data, null, 2)) } }, [query.data, selected])
+  useEffect(() => {
+    const bosses = spawnQuery.data?.bosses ?? []
+    if (!bosses.length) {
+      setSpawnBossId('')
+      setSpawnMapId('')
+      setSpawnZoneId('')
+      return
+    }
+
+    const boss = bosses.find((item) => item.bossId === spawnBossId) ?? bosses[0]
+    if (boss.bossId !== spawnBossId) setSpawnBossId(boss.bossId)
+
+    const map = boss.maps.find((item) => item.mapId === spawnMapId) ?? boss.maps[0]
+    if (!map) {
+      setSpawnMapId('')
+      setSpawnZoneId('')
+      return
+    }
+    if (map.mapId !== spawnMapId) setSpawnMapId(map.mapId)
+
+    const zone = map.zones.find((item) => item.zoneId === spawnZoneId) ?? map.zones.find((item) => item.available) ?? map.zones[0]
+    if (zone && zone.zoneId !== spawnZoneId) setSpawnZoneId(zone.zoneId)
+  }, [spawnQuery.data, spawnBossId, spawnMapId, spawnZoneId])
+
+  const selectedSpawnBoss = spawnQuery.data?.bosses.find((item) => item.bossId === spawnBossId)
+  const selectedSpawnMap = selectedSpawnBoss?.maps.find((item) => item.mapId === spawnMapId)
+  const selectedSpawnZone = selectedSpawnMap?.zones.find((item) => item.zoneId === spawnZoneId)
   const save = useMutation({ mutationFn: async () => { if (!selected) throw new Error('Chưa chọn boss'); const data = JSON.parse(editor) as JsonMap; return api.saveBoss(selected.key, data, selected.version) }, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bosses'] }) })
   const reload = useMutation({ mutationFn: api.reloadBosses, onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bosses'] }) })
+  const reset = useMutation({ mutationFn: () => api.bossAction('resetall'), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['bosses'] }); queryClient.invalidateQueries({ queryKey: ['boss-spawn-options'] }) } })
+  const summon = useMutation({
+    mutationFn: async () => {
+      if (!selectedSpawnBoss || !selectedSpawnMap || !selectedSpawnZone || !selectedSpawnZone.available) {
+        throw new Error('Vui lòng chọn một khu còn trống')
+      }
+      return api.summonBoss(selectedSpawnBoss.bossId, selectedSpawnMap.mapId, selectedSpawnZone.zoneId)
+    },
+    onSuccess: (result) => {
+      setSpawnSuccess(`Đã spawn ${result.name} tại ${result.mapId} · khu ${result.zoneId}`)
+      queryClient.invalidateQueries({ queryKey: ['boss-spawn-options'] })
+    },
+  })
   const choose = (row: BossConfigRow) => { setSelected(row); setEditor(JSON.stringify(row.data, null, 2)) }
-  return <><PageHeader title="Cấu hình Boss" description="Override được lưu trong database; không chỉnh sửa trực tiếp BossesData.java." actions={<><button className="secondary" onClick={() => reload.mutate()}><RefreshCw size={16} /> Áp dụng override</button><button className="primary" onClick={() => { if (window.confirm('Reset toàn bộ boss runtime?')) api.bossAction('resetall') }}><Swords size={16} /> Reset boss</button></>} />
+  return <><PageHeader title="Cấu hình Boss" description="Override được lưu trong database; không chỉnh sửa trực tiếp BossesData.java." actions={<><button className="secondary" onClick={() => reload.mutate()} disabled={reload.isPending}><RefreshCw size={16} /> Áp dụng override</button><button className="primary" onClick={() => window.confirm('Reset toàn bộ boss runtime?') && reset.mutate()} disabled={reset.isPending}><Swords size={16} /> Reset boss</button></>} />
+    <section className="panel boss-spawn-panel">
+      <div className="panel-heading">
+        <div><h3>Spawn boss thủ công</h3><p className="muted">Tạo instance mới tại đúng map và khu đang chạy.</p></div>
+        <span className="status-badge neutral">Runtime only</span>
+      </div>
+      <div className="boss-spawn-body">
+        <div className="field-grid boss-spawn-fields">
+          <label>Boss<select value={spawnBossId} onChange={(event) => { setSpawnSuccess(''); setSpawnBossId(event.target.value ? Number(event.target.value) : '') }} disabled={!spawnQuery.data?.bosses.length}><option value="">Chọn boss</option>{spawnQuery.data?.bosses.map((boss) => <option value={boss.bossId} key={boss.bossId}>{boss.name} ({boss.bossId})</option>)}</select></label>
+          <label>Map hợp lệ<select value={spawnMapId} onChange={(event) => { setSpawnSuccess(''); setSpawnMapId(event.target.value ? Number(event.target.value) : ''); setSpawnZoneId('') }} disabled={!selectedSpawnBoss?.maps.length}><option value="">Chọn map</option>{selectedSpawnBoss?.maps.map((map) => <option value={map.mapId} key={map.mapId}>{map.mapName} ({map.mapId})</option>)}</select></label>
+          <label>Khu<select className="boss-zone-select" value={spawnZoneId} onChange={(event) => { setSpawnSuccess(''); setSpawnZoneId(event.target.value ? Number(event.target.value) : '') }} disabled={!selectedSpawnMap?.zones.length}><option value="">Chọn khu</option>{selectedSpawnMap?.zones.map((zone) => <option value={zone.zoneId} key={zone.zoneId} disabled={!zone.available}>Khu {zone.zoneId} · {zone.players} người · {zone.bosses} boss{zone.status === 'OCCUPIED' ? ' · đã có boss' : zone.status === 'RESTRICTED' ? ' · ngoài giới hạn' : ''}</option>)}</select></label>
+        </div>
+        {selectedSpawnBoss && <div className="boss-spawn-instance-summary"><span><strong>{selectedSpawnBoss.instances.alive}</strong> đang sống</span><span><strong>{selectedSpawnBoss.instances.resting}</strong> REST</span><span><strong>{selectedSpawnBoss.instances.total}</strong> instance</span></div>}
+        <div className="alert warning boss-spawn-warning"><AlertTriangle size={16} /><div><strong>Chú ý</strong><span>Thao tác tạo boss mới, không hồi sinh boss REST. Boss chỉ tồn tại trong runtime và sẽ mất khi restart; khu đã có boss sống sẽ bị khóa.</span></div></div>
+        <div className="boss-spawn-actions"><button className="primary" disabled={!selectedSpawnZone?.available || summon.isPending} onClick={() => window.confirm(`Tạo boss mới tại ${selectedSpawnMap?.mapName} · khu ${selectedSpawnZone?.zoneId}?`) && summon.mutate()}><Swords size={16} /> {summon.isPending ? 'Đang spawn…' : 'Spawn boss'}</button>{spawnSuccess && <span className="boss-spawn-success">{spawnSuccess}</span>}</div>
+        {spawnQuery.isError && <ErrorBanner error={spawnQuery.error} />}
+        {summon.isError && <ErrorBanner error={summon.error} />}
+      </div>
+    </section>
     <div className="editor-layout"><section className="panel resource-list">{query.data?.map((row) => <button className={`resource-list-row ${selected?.key === row.key ? 'selected' : ''}`} onClick={() => choose(row)} key={row.key}>{(() => { const headReference = collectReferences({ outfit: row.data?.outfit }, 'bosses')[0]; return headReference ? <ReferenceThumbnail kind={headReference.kind} value={headReference.value} catalog={bossLookup.catalog} /> : <span className="list-avatar">{row.key.slice(0, 1)}</span> })()}<span><strong>{row.key}</strong><small>{row.data.name ? String(row.data.name) : 'Boss config'}</small></span><span className={`mini-status ${row.overridden ? 'active' : ''}`}>{row.overridden ? 'Override' : 'Default'}</span></button>)}{query.isLoading && <Skeleton />}</section><section className="panel json-editor-panel"><div className="panel-heading"><div><h3>{selected?.key ?? 'Chọn Boss'}</h3><p className="muted">Chỉnh full cấu hình JSON, có kiểm tra version.</p></div><button className="primary" disabled={!selected || save.isPending || !validJson} onClick={() => save.mutate()}><Save size={16} /> Lưu config</button></div><textarea className="json-editor" value={editor} onChange={(event) => setEditor(event.target.value)} spellCheck={false} />{!validJson && <div className="alert danger json-validation">JSON chưa hợp lệ — chưa thể lưu hoặc phân giải ID.</div>}<JsonReferencePreview value={editor} resource="bosses" />{save.isError && <ErrorBanner error={save.error} />}</section></div>
   </>
 }
@@ -478,7 +549,9 @@ function EditorDrawer({ resource, title, value, onChange, onClose, onSave, savin
 }
 
 function ErrorBanner({ error }: { error: unknown }) {
-  return <div className="alert danger"><AlertTriangle size={16} />{error instanceof Error ? error.message : 'Có lỗi xảy ra'}</div>
+  const message = error instanceof Error ? error.message : 'Có lỗi xảy ra'
+  const code = error instanceof ApiRequestError ? ` [${error.code}]` : ''
+  return <div className="alert danger"><AlertTriangle size={16} />{message}{code}</div>
 }
 
 function Skeleton() {

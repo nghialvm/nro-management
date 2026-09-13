@@ -1,8 +1,13 @@
 import type {
   AntiDdosStatus,
   ApiEnvelope,
+  AttributeServerConfig,
+  AttributeServerRow,
+  AttributeServerUpdate,
   AuthData,
   BossConfigRow,
+  BossSpawnOptions,
+  BossSpawnResult,
   DashboardSnapshot,
   EventConfig,
   GiftcodeDetail,
@@ -89,6 +94,17 @@ export const api = {
     return (await request<DashboardSnapshot>('/api/dashboard')).data
   },
 
+  async attributeServer() {
+    return (await request<AttributeServerConfig>('/api/server/attribute-server')).data
+  },
+
+  async updateAttributeServer(id: number, data: AttributeServerUpdate) {
+    return (await request<AttributeServerRow>(`/api/server/attribute-server/${encodeURIComponent(String(id))}`, {
+      method: 'PUT',
+      body: json(data),
+    })).data
+  },
+
   async list(resource: string, params: Record<string, string | number | undefined> = {}) {
     const search = new URLSearchParams()
     Object.entries(params).forEach(([key, value]) => {
@@ -154,6 +170,17 @@ export const api = {
 
   async bossAction(action: string, body: JsonMap = {}) {
     return (await request<JsonMap>('/api/bosses/actions', { method: 'POST', body: json({ action, ...body }) })).data
+  },
+
+  async bossSpawnOptions() {
+    return (await request<BossSpawnOptions>('/api/bosses/spawn-options')).data
+  },
+
+  async summonBoss(bossId: number, mapId: number, zoneId: number) {
+    return (await request<BossSpawnResult>('/api/bosses/actions', {
+      method: 'POST',
+      body: json({ action: 'summon', bossId, mapId, zoneId }),
+    })).data
   },
 
   async security() {

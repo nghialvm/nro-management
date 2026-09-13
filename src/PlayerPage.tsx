@@ -35,6 +35,7 @@ import {
   type ReferenceToken,
 } from './relations'
 import {
+  buildPlayerUpdatePayload,
   cloneValue,
   emptyPlayerItem,
   numberOrText,
@@ -101,12 +102,6 @@ function dateText(value: unknown) {
   if (!value) return '—'
   const date = new Date(String(value))
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('vi-VN')
-}
-
-function withoutVersion(row: ResourceRow) {
-  const result = cloneValue(row)
-  delete result.version
-  return result
 }
 
 function errorText(error: unknown) {
@@ -247,13 +242,18 @@ export function PlayerPage() {
   }, [detailQuery.data?.id, detailQuery.data?.version])
 
   const source = detailQuery.data
-  const dirty = Boolean(draft && source && JSON.stringify(withoutVersion(draft)) !== JSON.stringify(withoutVersion(source)))
+  const savePayload = useMemo(
+    () => draft && source ? buildPlayerUpdatePayload(draft, source) : null,
+    [draft, source],
+  )
+  const dirty = Boolean(savePayload && Object.keys(savePayload).some((field) => field !== 'id'))
   const valid = validPlayerDraft(draft, parsedItems)
   const save = useMutation({
     mutationFn: async () => {
       if (!draft || draft.id === undefined) throw new Error('Chưa chọn nhân vật')
       if (!valid) throw new Error('Dữ liệu nhân vật chưa hợp lệ')
-      return api.save('players', withoutVersion(draft), source?.version)
+      if (!source || !savePayload || !dirty) throw new Error('Không có thay đổi để lưu')
+      return api.save('players', savePayload, source.version)
     },
     onSuccess: (data) => {
       if (selectedId !== null) queryClient.setQueryData(['player-detail', selectedId], data)

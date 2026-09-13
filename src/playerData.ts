@@ -21,6 +21,26 @@ export interface ParsedPlayerItems {
   error?: string
 }
 
+export const playerWritableFields = [
+  'account_id', 'name', 'head', 'gender', 'clan_id',
+  'data_point', 'data_inventory', 'items_body', 'items_bag', 'items_box', 'pet',
+  'data_task', 'data_side_task', 'data_clan_task', 'data_kol_task', 'dataBadges',
+] as const
+
+export type PlayerWritableField = typeof playerWritableFields[number]
+
+export function changedPlayerFields(draft: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+  const changed: Record<string, unknown> = {}
+  for (const field of playerWritableFields) {
+    if (JSON.stringify(draft[field]) !== JSON.stringify(source[field])) changed[field] = draft[field]
+  }
+  return changed
+}
+
+export function buildPlayerUpdatePayload(draft: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
+  return { id: draft.id, ...changedPlayerFields(draft, source) }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value))
 }

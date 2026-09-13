@@ -33,6 +33,61 @@ describe('management API client', () => {
     expect(JSON.parse(String(init.body))).toEqual({ data: { username: 'admin-2' }, version: 'current' })
   })
 
+  it('uses the player ID in the PUT URL while sending only the partial update', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ data: { id: 1234, items_body: 'new-items', version: 'next' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.save('players', { id: 1234, items_body: 'new-items' }, 'current')
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/resources/players/1234')
+    expect(JSON.parse(String(init.body))).toEqual({ data: { items_body: 'new-items' }, version: 'current' })
+  })
+
+  it('loads and updates attribute server rows without adding the row ID to the payload', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ data: { attributes: [], powerLimit: 180010000000 } }))
+      .mockResolvedValueOnce(response({ data: { id: 1, templateId: 1, templateName: 'Tăng #value% TNSM toàn máy chủ', value: 11000, time: -1, active: true } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.attributeServer()
+    await api.updateAttributeServer(1, { value: 11000, time: -1 })
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/server/attribute-server')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/server/attribute-server/1')
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).toEqual({ value: 11000, time: -1 })
+  })
+
+  it('loads boss spawn options and sends a targeted summon payload', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ data: { bosses: [{ bossId: -183, name: 'Black Goku', maps: [], instances: { total: 3, alive: 0, resting: 3, dead: 0 } }] } }))
+      .mockResolvedValueOnce(response({ data: { action: 'summon', created: true, bossId: -183, name: 'Black Goku 42', mapId: 102, zoneId: 1, status: 'CHAT_S' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.bossSpawnOptions()
+    await api.summonBoss(-183, 102, 1)
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/bosses/spawn-options')
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/bosses/actions')
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).toEqual({ action: 'summon', bossId: -183, mapId: 102, zoneId: 1 })
+  })
+
+  it('preserves the occupied-zone error from a targeted summon', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({
+      error: { code: 'BOSS_ZONE_OCCUPIED', message: 'Khu đã có boss đang sống' },
+      requestId: 'request-occupied',
+    }, 409))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(api.summonBoss(-183, 102, 1)).rejects.toMatchObject({
+      status: 409,
+      code: 'BOSS_ZONE_OCCUPIED',
+      requestId: 'request-occupied',
+    })
+  })
+
   it('preserves structured conflict errors from the backend', async () => {
     const fetchMock = vi.fn().mockResolvedValue(response({
       error: { code: 'VERSION_CONFLICT', message: 'Dữ liệu đã thay đổi' },
